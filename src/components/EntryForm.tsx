@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { Plus, X, Check } from 'lucide-react';
-import { saveEntry } from '../utils/supabaseData';
+import React, { useState, useEffect, useRef } from 'react';
+import { Plus, X, Check, Search } from 'lucide-react';
+import { saveEntry, searchProducts } from '../utils/supabaseData';
+import { Product } from '../lib/supabase';
 
 interface SparePart {
   id: string;
@@ -16,6 +17,11 @@ const EntryForm: React.FC = () => {
   const [spareParts, setSpareParts] = useState<SparePart[]>([
     { id: '1', name: '', quantity: 1 }
   ]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [searchResults, setSearchResults] = useState<Product[]>([]);
+  const [activePartId, setActivePartId] = useState<string | null>(null);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -71,7 +77,61 @@ const EntryForm: React.FC = () => {
     setSpareParts(spareParts.map(part =>
       part.id === id ? { ...part, [field]: value } : part
     ));
+    
+    if (field === 'name' && typeof value === 'string') {
+      setSearchTerm(value);
+      setActivePartId(id);
+      if (value.trim().length > 0) {
+        searchProductsDebounced(value);
+        setShowDropdown(true);
+      } else {
+        setSearchResults([]);
+        setShowDropdown(false);
+      }
+    }
   };
+  
+  // Debounce search to avoid too many requests
+  const searchProductsDebounced = async (query: string) => {
+    try {
+      const results = await searchProducts(query);
+      setSearchResults(results);
+    } catch (error) {
+      console.error('Error searching products:', error);
+      setSearchResults([]);
+    }
+  };
+  
+  const handleSelectProduct = (product: Product) => {
+    if (activePartId) {
+      setSpareParts(spareParts.map(part =>
+        part.id === activePartId ? { ...part, name: product.name } : part
+      ));
+      setShowDropdown(false);
+      setSearchResults([]);
+      setSearchTerm('');
+      
+      // Focus on quantity input after selection
+      setTimeout(() => {
+        const quantityInput = document.getElementById(`quantity-${activePartId}`);
+        if (quantityInput) quantityInput.focus();
+      }, 10);
+    }
+  };
+  
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowDropdown(false);
+      }
+    };
+    
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -266,21 +326,67 @@ const EntryForm: React.FC = () => {
                 {spareParts.map((part, index) => (
                   <tr key={part.id} className="hover:bg-gray-50">
                     <td className="px-4 py-2 whitespace-nowrap text-sm">
-                      <input
-                        id={`part-name-${part.id}`}
-                        type="text"
-                        value={part.name}
-                        onChange={(e) => handlePartChange(part.id, 'name', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="Part name or number"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            const quantityInput = document.getElementById(`quantity-${part.id}`);
-                            if (quantityInput) quantityInput.focus();
-                          }
-                        }}
-                      />
+                      <div className="relative">
+                        <input
+                          id={`part-name-${part.id}`}
+                          type="text"
+                          value={part.name}
+                          onChange={(e) => handlePartChange(part.id, 'name', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          placeholder="Part name or number"
+                          onFocus={() => {
+                            setActivePartId(part.id);
+                            if (part.name.trim().length > 0) {
+                              searchProductsDebounced(part.name);
+                              setShowDropdown(true);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              if (searchResults.length > 0 && showDropdown) {
+                                handleSelectProduct(searchResults[0]);
+                              } else {
+                                const quantityInput = document.getElementById(`quantity-${part.id}`);
+                                if (quantityInput) quantityInput.focus();
+                              }
+                            } else if (e.key === 'ArrowDown' && searchResults.length > 0 && showDropdown) {
+                              e.preventDefault();
+                              const dropdown = document.getElementById(`dropdown-${part.id}`);
+                              const firstItem = dropdown?.querySelector('div');
+                              if (firstItem) (firstItem as HTMLElement).focus();
+                            }
+                          }}
+                        />
+                        {activePartId === part.id && showDropdown && searchResults.length > 0 && (
+                          <div 
+                            id={`dropdown-${part.id}`}
+                            ref={dropdownRef}
+                            className="absolute z-10 mt-1 w-full bg-white shadow-lg max-h-60 rounded-md py-1 text-base overflow-auto focus:outline-none sm:text-sm"
+                          >
+                            {searchResults.map((product) => (
+                              <div
+                                key={product.id}
+                                onClick={() => handleSelectProduct(product)}
+                                className="cursor-pointer select-none relative py-2 pl-3 pr-9 hover:bg-gray-100 focus:bg-gray-100 outline-none"
+                                tabIndex={0}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    handleSelectProduct(product);
+                                  }
+                                }}
+                              >
+                                <div className="flex items-center">
+                                  <span className="font-medium block truncate">{product.name}</span>
+                                </div>
+                                <div className="text-xs text-gray-500 mt-1">
+                                  Part #: {product.partNumber}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-2 whitespace-nowrap text-sm">
                       <input

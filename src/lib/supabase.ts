@@ -45,6 +45,32 @@ export interface Database {
           updated_at?: string;
         };
       };
+      products: {
+        Row: {
+          id: string;
+          name: string;
+          part_number: string;
+          buying_price: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          part_number: string;
+          buying_price: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          name?: string;
+          part_number?: string;
+          buying_price?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
     };
   };
 }
@@ -62,5 +88,13 @@ export interface Entry {
   vehicleNumber: string;
   complaintType: string;
   spareParts: SparePart[];
+  timestamp: Date;
+}
+
+export interface Product {
+  id: string;
+  name: string;
+  partNumber: string;
+  buyingPrice: number;
   timestamp: Date;
 }

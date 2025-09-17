@@ -1,4 +1,4 @@
-import { supabase, type Entry, type SparePart } from '../lib/supabase';
+import { supabase, type Entry, type SparePart, type Product } from '../lib/supabase';
 
 // Convert database row to Entry interface
 const convertDbRowToEntry = (row: any): Entry => ({
@@ -39,6 +39,146 @@ export const saveEntry = async (entryData: Omit<Entry, 'id' | 'timestamp'>): Pro
     return convertDbRowToEntry(data);
   } catch (error) {
     console.error('Error in saveEntry:', error);
+    throw error;
+  }
+};
+
+// Convert database row to Product interface
+const convertDbRowToProduct = (row: any): Product => ({
+  id: row.id,
+  name: row.name,
+  partNumber: row.part_number,
+  buyingPrice: row.buying_price,
+  timestamp: new Date(row.created_at)
+});
+
+// Convert Product interface to database row
+const convertProductToDbRow = (product: Omit<Product, 'id' | 'timestamp'>) => ({
+  name: product.name,
+  part_number: product.partNumber,
+  buying_price: product.buyingPrice
+});
+
+// Save a new product
+export const saveProduct = async (productData: Omit<Product, 'id' | 'timestamp'>): Promise<Product> => {
+  try {
+    const dbRow = convertProductToDbRow(productData);
+    
+    const { data, error } = await supabase
+      .from('products')
+      .insert([dbRow])
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error saving product:', error);
+      throw new Error(`Failed to save product: ${error.message}`);
+    }
+
+    return convertDbRowToProduct(data);
+  } catch (error) {
+    console.error('Error in saveProduct:', error);
+    throw error;
+  }
+};
+
+// Get all products
+export const getAllProducts = async (): Promise<Product[]> => {
+  try {
+    const { data, error } = await supabase
+      .from('products')
+      .select('*')
+      .order('name');
+
+    if (error) {
+      console.error('Error getting all products:', error);
+      throw new Error(`Failed to get all products: ${error.message}`);
+    }
+
+    return (data || []).map(convertDbRowToProduct);
+  } catch (error) {
+    console.error('Error in getAllProducts:', error);
+    throw error;
+  }
+};
+
+// Search products by name or part number
+export const searchProducts = async (searchTerm: string): Promise<Product[]> => {
+  try {
+    if (!searchTerm.trim()) {
+      return [];
+    }
+    
+    // Use the search_products RPC function
+    const { data, error } = await supabase
+      .rpc('search_products', { search_term: searchTerm.trim() });
+
+    if (error) {
+      // Fallback to direct query if RPC fails
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from('products')
+        .select('*')
+        .or(`name.ilike.%${searchTerm}%,part_number.ilike.%${searchTerm}%`)
+        .order('name')
+        .limit(10);
+
+      if (fallbackError) {
+        console.error('Error searching products:', fallbackError);
+        throw new Error(`Failed to search products: ${fallbackError.message}`);
+      }
+
+      return (fallbackData || []).map(convertDbRowToProduct);
+    }
+
+    return (data || []).map(convertDbRowToProduct);
+  } catch (error) {
+    console.error('Error in searchProducts:', error);
+    throw error;
+  }
+};
+
+// Delete a product
+export const deleteProduct = async (id: string): Promise<void> => {
+  try {
+    const { error } = await supabase
+      .from('products')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('Error deleting product:', error);
+      throw new Error(`Failed to delete product: ${error.message}`);
+    }
+  } catch (error) {
+    console.error('Error in deleteProduct:', error);
+    throw error;
+  }
+};
+
+// Update a product
+export const updateProduct = async (id: string, productData: Partial<Omit<Product, 'id' | 'timestamp'>>): Promise<Product> => {
+  try {
+    const updates: any = {};
+    
+    if (productData.name !== undefined) updates.name = productData.name;
+    if (productData.partNumber !== undefined) updates.part_number = productData.partNumber;
+    if (productData.buyingPrice !== undefined) updates.buying_price = productData.buyingPrice;
+    
+    const { data, error } = await supabase
+      .from('products')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error updating product:', error);
+      throw new Error(`Failed to update product: ${error.message}`);
+    }
+
+    return convertDbRowToProduct(data);
+  } catch (error) {
+    console.error('Error in updateProduct:', error);
     throw error;
   }
 };
@@ -173,10 +313,20 @@ export const getStatistics = async () => {
       return sum + parts.reduce((partSum, part) => partSum + part.quantity, 0);
     }, 0);
 
+    // Get total products count
+    const { count: totalProducts, error: productsError } = await supabase
+      .from('products')
+      .select('*', { count: 'exact', head: true });
+
+    if (productsError) {
+      throw productsError;
+    }
+
     return {
       totalEntries: totalEntries || 0,
       uniqueMechanics,
-      totalParts
+      totalParts,
+      totalProducts: totalProducts || 0
     };
   } catch (error) {
     console.error('Error getting statistics:', error);

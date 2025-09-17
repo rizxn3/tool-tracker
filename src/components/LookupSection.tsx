@@ -224,7 +224,7 @@ const LookupSection: React.FC = () => {
                   <div>
                     <h4 className="text-sm font-medium text-gray-900 mb-2">Spare Parts:</h4>
                     <div className="flex flex-wrap gap-2">
-                      {entry.spareParts.map((part, partIndex) => (
+                      {entry.spareParts.map((part: { name: string; quantity: number }, partIndex: number) => (
                         <span
                           key={partIndex}
                           className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
