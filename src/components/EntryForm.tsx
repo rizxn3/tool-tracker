@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Plus, X, Check } from 'lucide-react';
-import { saveEntry } from '../utils/mockData';
+import { saveEntry } from '../utils/supabaseData';
 
 interface SparePart {
   id: string;

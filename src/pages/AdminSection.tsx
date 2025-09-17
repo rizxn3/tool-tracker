@@ -1,5 +1,6 @@
 import React from 'react';
 import { BarChart3, Users, Package, Settings, TrendingUp, Clock } from 'lucide-react';
+// Note: Statistics will be static for now, but can be made dynamic by importing getStatistics from supabaseData
 
 const AdminSection: React.FC = () => {
   // Mock statistics

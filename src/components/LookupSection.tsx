@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Search, Calendar, User, Hash, Package, UserRound } from 'lucide-react';
-import { searchByPlateNumber, searchByPartName, searchByMechanicName, type Entry } from '../utils/mockData';
+import { searchByPlateNumber, searchByPartName, searchByMechanicName, type Entry } from '../utils/supabaseData';
 
 const LookupSection: React.FC = () => {
   const [searchType, setSearchType] = useState<'plate' | 'part' | 'mechanic' | null>(null);
@@ -8,27 +8,31 @@ const LookupSection: React.FC = () => {
   const [searchResults, setSearchResults] = useState<Entry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSearch = async (type: 'plate' | 'part' | 'mechanic') => {
     if (!searchQuery.trim()) return;
     
     setIsLoading(true);
     setHasSearched(true);
+    setError(null);
 
     try {
       let results: Entry[] = [];
       
       if (type === 'plate') {
-        results = searchByPlateNumber(searchQuery.toUpperCase().trim());
+        results = await searchByPlateNumber(searchQuery.toUpperCase().trim());
       } else if (type === 'part') {
-        results = searchByPartName(searchQuery.trim());
+        results = await searchByPartName(searchQuery.trim());
       } else if (type === 'mechanic') {
-        results = searchByMechanicName(searchQuery.trim());
+        results = await searchByMechanicName(searchQuery.trim());
       }
       
       setSearchResults(results);
     } catch (error) {
       console.error('Search error:', error);
+      setError(error instanceof Error ? error.message : 'An error occurred while searching');
+      setSearchResults([]);
     } finally {
       setIsLoading(false);
     }
@@ -39,6 +43,7 @@ const LookupSection: React.FC = () => {
     setSearchQuery('');
     setSearchResults([]);
     setHasSearched(false);
+    setError(null);
   };
 
   const formatDate = (date: Date) => {
@@ -155,6 +160,16 @@ const LookupSection: React.FC = () => {
         </div>
 
         {/* Search Results */}
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+            <div className="flex items-center">
+              <div className="text-red-600 text-sm">
+                <strong>Error:</strong> {error}
+              </div>
+            </div>
+          </div>
+        )}
+
         {isLoading && (
           <div className="text-center py-8">
             <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
