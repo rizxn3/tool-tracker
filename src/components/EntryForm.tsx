@@ -176,6 +176,10 @@ const EntryForm: React.FC = () => {
       setVehicleNumber('');
       setComplaintType('');
       setSpareParts([{ id: '1', name: '', quantity: 1 }]);
+      setSearchResults([]);
+      setShowDropdown(false);
+      setSearchTerm('');
+      setActivePartId(null);
       setErrors({});
 
       setTimeout(() => setShowSuccess(false), 3000);
