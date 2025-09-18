@@ -81,26 +81,39 @@ const EntryForm: React.FC = () => {
     if (field === 'name' && typeof value === 'string') {
       setSearchTerm(value);
       setActivePartId(id);
-      if (value.trim().length > 0) {
-        searchProductsDebounced(value);
-        setShowDropdown(true);
-      } else {
-        setSearchResults([]);
-        setShowDropdown(false);
-      }
+      // Always trigger search as user types, even for empty strings
+      // The debounced function will handle empty strings appropriately
+      searchProductsDebounced(value);
     }
   };
   
+  // This function is not needed as handlePartChange already handles the functionality
+  
   // Debounce search to avoid too many requests
-  const searchProductsDebounced = async (query: string) => {
-    try {
-      const results = await searchProducts(query);
-      setSearchResults(results);
-    } catch (error) {
-      console.error('Error searching products:', error);
-      setSearchResults([]);
-    }
-  };
+  const searchProductsDebounced = React.useCallback(
+    (() => {
+      let timeout: NodeJS.Timeout;
+      return (query: string) => {
+        if (timeout) clearTimeout(timeout);
+        timeout = setTimeout(async () => {
+          try {
+            if (query.trim().length > 0) {
+              const results = await searchProducts(query);
+              setSearchResults(results);
+              setShowDropdown(true);
+            } else {
+              setSearchResults([]);
+              setShowDropdown(false);
+            }
+          } catch (error) {
+            console.error('Error searching products:', error);
+            setSearchResults([]);
+          }
+        }, 300); // 300ms debounce delay
+      };
+    })(),
+    []
+  );
   
   const handleSelectProduct = (product: Product) => {
     if (activePartId) {
@@ -336,10 +349,8 @@ const EntryForm: React.FC = () => {
                           placeholder="Part name or number"
                           onFocus={() => {
                             setActivePartId(part.id);
-                            if (part.name.trim().length > 0) {
-                              searchProductsDebounced(part.name);
-                              setShowDropdown(true);
-                            }
+                            // Always trigger search on focus, even for empty strings
+                            searchProductsDebounced(part.name);
                           }}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') {
