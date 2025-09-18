@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, X, Check, Search } from 'lucide-react';
-import { saveEntry, searchProducts } from '../utils/supabaseData';
+import { Plus, X, Check } from 'lucide-react';
+// Make sure these imports are correct
+import { searchProducts, saveEntry } from '../utils/supabaseData'; 
 import { Product } from '../lib/supabase';
 
+// Interface for the spare parts list in the form's state
 interface SparePart {
   id: string;
   name: string;
@@ -10,155 +12,178 @@ interface SparePart {
 }
 
 const EntryForm: React.FC = () => {
+  // Form field states
   const [mechanicName, setMechanicName] = useState('');
   const [contactNumber, setContactNumber] = useState('');
   const [vehicleNumber, setVehicleNumber] = useState('');
   const [complaintType, setComplaintType] = useState('');
   const [spareParts, setSpareParts] = useState<SparePart[]>([
-    { id: '1', name: '', quantity: 1 }
+    { id: Date.now().toString(), name: '', quantity: 1 }
   ]);
-  const [searchTerm, setSearchTerm] = useState('');
+
+  // Enhanced search-related states
   const [searchResults, setSearchResults] = useState<Product[]>([]);
-  const [activePartId, setActivePartId] = useState<string | null>(null);
-  const [showDropdown, setShowDropdown] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [searchInputs, setSearchInputs] = useState<Record<string, string>>({});
+  const [dropdownStates, setDropdownStates] = useState<Record<string, boolean>>({});
+  
+  // Other UI/form handling states
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const dropdownRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
+
+  // --- FORM VALIDATION ---
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
-
-    if (!mechanicName.trim()) {
-      newErrors.mechanicName = 'Mechanic name is required';
-    }
-
-    if (!contactNumber.trim()) {
-      newErrors.contactNumber = 'Contact number is required';
-    } else if (!/^\d{10}$/.test(contactNumber.replace(/\D/g, ''))) {
-      newErrors.contactNumber = 'Please enter a valid 10-digit phone number';
-    }
-
-    if (!vehicleNumber.trim()) {
-      newErrors.vehicleNumber = 'Vehicle number is required';
-    }
-    
-    if (!complaintType.trim()) {
-      newErrors.complaintType = 'Complaint type is required';
-    }
-
-    // Check if there's at least one valid spare part with name and quantity
+    if (!mechanicName.trim()) newErrors.mechanicName = 'Mechanic name is required';
+    if (!contactNumber.trim()) newErrors.contactNumber = 'Contact number is required';
+    if (!/^\d{10}$/.test(contactNumber.replace(/\D/g, ''))) newErrors.contactNumber = 'Please enter a valid 10-digit phone number';
+    if (!vehicleNumber.trim()) newErrors.vehicleNumber = 'Vehicle number is required';
+    if (!complaintType.trim()) newErrors.complaintType = 'Complaint type is required';
     const validParts = spareParts.filter(part => part.name.trim() && part.quantity > 0);
-    if (validParts.length === 0) {
-      newErrors.spareParts = 'At least one spare part with name and quantity is required';
-    }
-
+    if (validParts.length === 0) newErrors.spareParts = 'At least one spare part is required';
+    
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
+  // --- SPARE PARTS MANAGEMENT ---
   const handleAddPart = () => {
-    // Add a new empty part to the list
     const newPart = { id: Date.now().toString(), name: '', quantity: 1 };
     setSpareParts([...spareParts, newPart]);
-    
-    // Focus on the new part's name input after adding
-    setTimeout(() => {
-      const newPartInput = document.getElementById(`part-name-${newPart.id}`);
-      if (newPartInput) (newPartInput as HTMLElement).focus();
-    }, 10);
+    // Initialize search input and dropdown state for the new part
+    setSearchInputs(prev => ({ ...prev, [newPart.id]: '' }));
+    setDropdownStates(prev => ({ ...prev, [newPart.id]: false }));
+    setTimeout(() => document.getElementById(`part-name-${newPart.id}`)?.focus(), 10);
   };
 
   const handleRemovePart = (id: string) => {
     setSpareParts(spareParts.filter(part => part.id !== id));
+    // Clean up search state for removed part
+    setSearchInputs(prev => {
+      const newState = { ...prev };
+      delete newState[id];
+      return newState;
+    });
+    setDropdownStates(prev => {
+      const newState = { ...prev };
+      delete newState[id];
+      return newState;
+    });
   };
 
   const handlePartChange = (id: string, field: 'name' | 'quantity', value: string | number) => {
-    setSpareParts(spareParts.map(part =>
-      part.id === id ? { ...part, [field]: value } : part
-    ));
-    
+    setSpareParts(prevParts =>
+      prevParts.map(part =>
+        part.id === id ? { ...part, [field]: value } : part
+      )
+    );
+
+    // If the name is changed, update search input and trigger search
     if (field === 'name' && typeof value === 'string') {
-      setSearchTerm(value);
-      setActivePartId(id);
-      // Always trigger search as user types, even for empty strings
-      // The debounced function will handle empty strings appropriately
-      searchProductsDebounced(value);
+      setSearchInputs(prev => ({ ...prev, [id]: value }));
+      searchProductsDebounced(id, value);
     }
   };
-  
-  // This function is not needed as handlePartChange already handles the functionality
-  
-  // Debounce search to avoid too many requests
+
+  // --- SEARCH FUNCTIONALITY ---
+
+  // Initialize search inputs and dropdown states for existing parts
+  useEffect(() => {
+    const initialSearchInputs: Record<string, string> = {};
+    const initialDropdownStates: Record<string, boolean> = {};
+    
+    spareParts.forEach(part => {
+      initialSearchInputs[part.id] = part.name;
+      initialDropdownStates[part.id] = false;
+    });
+    
+    setSearchInputs(initialSearchInputs);
+    setDropdownStates(initialDropdownStates);
+  }, []);
+
+  // Debounced search to prevent API calls on every keystroke
   const searchProductsDebounced = React.useCallback(
     (() => {
-      let timeout: NodeJS.Timeout;
-      return (query: string) => {
-        if (timeout) clearTimeout(timeout);
-        timeout = setTimeout(async () => {
-          try {
-            if (query.trim().length > 0) {
+      const timeouts: Record<string, NodeJS.Timeout> = {};
+      
+      return (partId: string, query: string) => {
+        // Clear existing timeout for this part
+        if (timeouts[partId]) {
+          clearTimeout(timeouts[partId]);
+        }
+        
+        timeouts[partId] = setTimeout(async () => {
+          if (query.trim().length > 0) {
+            try {
               const results = await searchProducts(query);
               setSearchResults(results);
-              setShowDropdown(true);
-            } else {
+              setDropdownStates(prev => ({ ...prev, [partId]: true }));
+            } catch (error) {
+              console.error('Error searching products:', error);
               setSearchResults([]);
-              setShowDropdown(false);
+              setDropdownStates(prev => ({ ...prev, [partId]: false }));
             }
-          } catch (error) {
-            console.error('Error searching products:', error);
+          } else {
             setSearchResults([]);
+            setDropdownStates(prev => ({ ...prev, [partId]: false }));
           }
-        }, 300); // 300ms debounce delay
+        }, 300); // 300ms delay
       };
     })(),
     []
   );
+
+  // Handle selecting a product from the dropdown
+  const handleSelectProduct = (partId: string, product: Product) => {
+    // Update the name of the selected spare part
+    setSpareParts(prevParts =>
+      prevParts.map(part =>
+        part.id === partId ? { ...part, name: product.name } : part
+      )
+    );
+    
+    // Update search input with selected product name
+    setSearchInputs(prev => ({ ...prev, [partId]: product.name }));
+    
+    // Hide dropdown
+    setDropdownStates(prev => ({ ...prev, [partId]: false }));
+    
+    // Focus on the quantity input for better UX
+    setTimeout(() => document.getElementById(`quantity-${partId}`)?.focus(), 10);
+  };
   
-  const handleSelectProduct = (product: Product) => {
-    if (activePartId) {
-      setSpareParts(spareParts.map(part =>
-        part.id === activePartId ? { ...part, name: product.name } : part
-      ));
-      setShowDropdown(false);
-      setSearchResults([]);
-      setSearchTerm('');
-      
-      // Focus on quantity input after selection
-      setTimeout(() => {
-        const quantityInput = document.getElementById(`quantity-${activePartId}`);
-        if (quantityInput) quantityInput.focus();
-      }, 10);
+  // Handle input focus to show dropdown
+  const handleInputFocus = (partId: string) => {
+    const query = searchInputs[partId] || '';
+    if (query.trim().length > 0) {
+      searchProductsDebounced(partId, query);
     }
   };
   
-  // Close dropdown when clicking outside
+  // Close dropdown when clicking outside of it
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setShowDropdown(false);
-      }
+      Object.entries(dropdownRefs.current).forEach(([partId, ref]) => {
+        if (ref && !ref.contains(event.target as Node)) {
+          setDropdownStates(prev => ({ ...prev, [partId]: false }));
+        }
+      });
     };
     
     document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // --- FORM SUBMISSION ---
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!validateForm()) {
-      return;
-    }
+    if (!validateForm()) return;
 
     setIsSubmitting(true);
-    
     try {
-      // Filter out parts with empty names or invalid quantities
       const validParts = spareParts.filter(part => part.name.trim() && part.quantity > 0);
-      
       await saveEntry({
         mechanicName: mechanicName.trim(),
         contactNumber: contactNumber.trim(),
@@ -169,45 +194,32 @@ const EntryForm: React.FC = () => {
       });
 
       setShowSuccess(true);
-      
-      // Reset form
+      // Reset form fields
       setMechanicName('');
       setContactNumber('');
       setVehicleNumber('');
       setComplaintType('');
-      setSpareParts([{ id: '1', name: '', quantity: 1 }]);
-      setSearchResults([]);
-      setShowDropdown(false);
-      setSearchTerm('');
-      setActivePartId(null);
+      setSpareParts([{ id: Date.now().toString(), name: '', quantity: 1 }]);
       setErrors({});
-
+      
       setTimeout(() => setShowSuccess(false), 3000);
     } catch (error) {
       console.error('Error saving entry:', error);
+      // Here you might want to set an error message to display to the user
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const formatContactNumber = (value: string) => {
-    const numbers = value.replace(/\D/g, '');
-    if (numbers.length <= 10) {
-      return numbers.replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3').replace(/-+$/, '');
-    }
-    return contactNumber;
-  };
+  // --- UI & RENDER ---
 
   if (showSuccess) {
     return (
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8">
-        <div className="text-center">
-          <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100 mb-4">
-            <Check className="h-6 w-6 text-green-600" />
-          </div>
-          <h3 className="text-lg font-medium text-gray-900 mb-2">Entry Saved Successfully!</h3>
-          <p className="text-gray-600">The spare parts entry has been recorded in the system.</p>
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8 text-center">
+        <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100 mb-4">
+          <Check className="h-6 w-6 text-green-600" />
         </div>
+        <h3 className="text-lg font-medium text-gray-900">Entry Saved Successfully!</h3>
       </div>
     );
   }
@@ -220,250 +232,132 @@ const EntryForm: React.FC = () => {
       </div>
       
       <form onSubmit={handleSubmit} className="p-6 space-y-6">
-        {/* Mechanic Information */}
+        {/* Mechanic & Vehicle Info */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Mechanic Name */}
           <div>
-            <label htmlFor="mechanicName" className="block text-sm font-medium text-gray-700 mb-2">
-              Mechanic Name *
-            </label>
-            <input
-              type="text"
-              id="mechanicName"
-              value={mechanicName}
-              onChange={(e) => setMechanicName(e.target.value)}
-              className={`w-full px-3 py-2 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                errors.mechanicName ? 'border-red-300' : 'border-gray-300'
-              }`}
-              placeholder="Enter mechanic name"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  document.getElementById('contactNumber')?.focus();
-                }
-              }}
-            />
-            {errors.mechanicName && (
-              <p className="mt-1 text-sm text-red-600">{errors.mechanicName}</p>
-            )}
+            <label htmlFor="mechanicName" className="block text-sm font-medium text-gray-700 mb-2">Mechanic Name *</label>
+            <input type="text" id="mechanicName" value={mechanicName} onChange={(e) => setMechanicName(e.target.value)} className={`w-full px-3 py-2 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.mechanicName ? 'border-red-300' : 'border-gray-300'}`} placeholder="Enter mechanic name"/>
+            {errors.mechanicName && <p className="mt-1 text-sm text-red-600">{errors.mechanicName}</p>}
           </div>
-
+          {/* Contact Number */}
           <div>
-            <label htmlFor="contactNumber" className="block text-sm font-medium text-gray-700 mb-2">
-              Contact Number *
-            </label>
-            <input
-              type="tel"
-              id="contactNumber"
-              value={contactNumber}
-              onChange={(e) => setContactNumber(formatContactNumber(e.target.value))}
-              className={`w-full px-3 py-2 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                errors.contactNumber ? 'border-red-300' : 'border-gray-300'
-              }`}
-              placeholder="123-456-7890"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  document.getElementById('vehicleNumber')?.focus();
-                }
-              }}
-            />
-            {errors.contactNumber && (
-              <p className="mt-1 text-sm text-red-600">{errors.contactNumber}</p>
-            )}
+            <label htmlFor="contactNumber" className="block text-sm font-medium text-gray-700 mb-2">Contact Number *</label>
+            <input type="tel" id="contactNumber" value={contactNumber} onChange={(e) => setContactNumber(e.target.value)} className={`w-full px-3 py-2 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.contactNumber ? 'border-red-300' : 'border-gray-300'}`} placeholder="Enter 10-digit number"/>
+            {errors.contactNumber && <p className="mt-1 text-sm text-red-600">{errors.contactNumber}</p>}
           </div>
         </div>
-
-        {/* Vehicle Information */}
         <div>
-          <label htmlFor="vehicleNumber" className="block text-sm font-medium text-gray-700 mb-2">
-            Vehicle Number Plate *
-          </label>
-          <input
-            type="text"
-            id="vehicleNumber"
-            value={vehicleNumber}
-            onChange={(e) => setVehicleNumber(e.target.value.toUpperCase())}
-            className={`w-full px-3 py-2 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-              errors.vehicleNumber ? 'border-red-300' : 'border-gray-300'
-            }`}
-            placeholder="KA01AB1234"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                document.getElementById('complaintType')?.focus();
-              }
-            }}
-          />
-          {errors.vehicleNumber && (
-            <p className="mt-1 text-sm text-red-600">{errors.vehicleNumber}</p>
-          )}
+            <label htmlFor="vehicleNumber" className="block text-sm font-medium text-gray-700 mb-2">Vehicle Number Plate *</label>
+            <input type="text" id="vehicleNumber" value={vehicleNumber} onChange={(e) => setVehicleNumber(e.target.value.toUpperCase())} className={`w-full px-3 py-2 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.vehicleNumber ? 'border-red-300' : 'border-gray-300'}`} placeholder="KA01AB1234"/>
+            {errors.vehicleNumber && <p className="mt-1 text-sm text-red-600">{errors.vehicleNumber}</p>}
         </div>
-
-        {/* Complaint Type */}
         <div>
-          <label htmlFor="complaintType" className="block text-sm font-medium text-gray-700 mb-2">
-            Complaint Type *
-          </label>
-          <input
-            type="text"
-            id="complaintType"
-            value={complaintType}
-            onChange={(e) => setComplaintType(e.target.value)}
-            className={`w-full px-3 py-2 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-              errors.complaintType ? 'border-red-300' : 'border-gray-300'
-            }`}
-            placeholder="Enter complaint type (e.g., Brake Issues, Engine Performance)"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                const partNameInput = document.querySelector('input[placeholder="Part name or number"]');
-                if (partNameInput) (partNameInput as HTMLElement).focus();
-              }
-            }}
-          />
-          {errors.complaintType && (
-            <p className="mt-1 text-sm text-red-600">{errors.complaintType}</p>
-          )}
+            <label htmlFor="complaintType" className="block text-sm font-medium text-gray-700 mb-2">Complaint Type *</label>
+            <input type="text" id="complaintType" value={complaintType} onChange={(e) => setComplaintType(e.target.value)} className={`w-full px-3 py-2 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.complaintType ? 'border-red-300' : 'border-gray-300'}`} placeholder="e.g., Brake Issues, Engine Oil Change"/>
+            {errors.complaintType && <p className="mt-1 text-sm text-red-600">{errors.complaintType}</p>}
         </div>
 
         {/* Spare Parts Section */}
         <div>
-          <div className="flex items-center justify-between mb-4">
-            <label className="block text-sm font-medium text-gray-700">
-              Spare Parts *
-            </label>
+          <div className="flex justify-between items-center mb-4">
+            <label className="block text-sm font-medium text-gray-700">Spare Parts *</label>
+            {errors.spareParts && <p className="text-sm text-red-600">{errors.spareParts}</p>}
           </div>
-
-          <div className="overflow-hidden rounded-lg border border-gray-200 mb-4">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Part Name</th>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">Quantity</th>
-                  <th scope="col" className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-16">Action</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {spareParts.map((part, index) => (
-                  <tr key={part.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-2 whitespace-nowrap text-sm">
-                      <div className="relative">
-                        <input
-                          id={`part-name-${part.id}`}
-                          type="text"
-                          value={part.name}
-                          onChange={(e) => handlePartChange(part.id, 'name', e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          placeholder="Part name or number"
-                          onFocus={() => {
-                            setActivePartId(part.id);
-                            // Always trigger search on focus, even for empty strings
-                            searchProductsDebounced(part.name);
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              if (searchResults.length > 0 && showDropdown) {
-                                handleSelectProduct(searchResults[0]);
-                              } else {
-                                const quantityInput = document.getElementById(`quantity-${part.id}`);
-                                if (quantityInput) quantityInput.focus();
-                              }
-                            } else if (e.key === 'ArrowDown' && searchResults.length > 0 && showDropdown) {
-                              e.preventDefault();
-                              const dropdown = document.getElementById(`dropdown-${part.id}`);
-                              const firstItem = dropdown?.querySelector('div');
-                              if (firstItem) (firstItem as HTMLElement).focus();
-                            }
-                          }}
-                        />
-                        {activePartId === part.id && showDropdown && searchResults.length > 0 && (
-                          <div 
-                            id={`dropdown-${part.id}`}
-                            ref={dropdownRef}
-                            className="absolute z-10 mt-1 w-full bg-white shadow-lg max-h-60 rounded-md py-1 text-base overflow-auto focus:outline-none sm:text-sm"
+          
+          {/* Table Header */}
+          <div className="grid grid-cols-12 gap-4 mb-2 px-3 py-2 bg-gray-50 rounded-t-lg">
+            <div className="col-span-8 text-sm font-medium text-gray-700">Part Name or Number</div>
+            <div className="col-span-3 text-sm font-medium text-gray-700">Quantity</div>
+            <div className="col-span-1"></div>
+          </div>
+          
+          {/* Table Body */}
+          <div className="border border-gray-200 rounded-b-lg divide-y divide-gray-200">
+            {spareParts.map((part, index) => (
+              <div key={part.id} className="grid grid-cols-12 gap-4 p-3 items-center">
+                {/* Part Name Input with Dropdown */}
+                <div className="col-span-8 relative">
+                  <input
+                    id={`part-name-${part.id}`}
+                    type="text"
+                    value={part.name}
+                    onChange={(e) => handlePartChange(part.id, 'name', e.target.value)}
+                    onFocus={() => handleInputFocus(part.id)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Type to search parts..."
+                  />
+                  
+                  {/* Search Results Dropdown */}
+                  {dropdownStates[part.id] && (
+                    <div 
+                      ref={(el) => dropdownRefs.current[part.id] = el}
+                      className="absolute z-10 mt-1 w-full bg-white shadow-lg max-h-60 rounded-md py-1 text-base overflow-auto focus:outline-none sm:text-sm"
+                    >
+                      {searchResults.length > 0 ? (
+                        searchResults.map((product) => (
+                          <div
+                            key={product.id}
+                            onClick={() => handleSelectProduct(part.id, product)}
+                            className="cursor-pointer hover:bg-gray-100 px-4 py-2"
                           >
-                            {searchResults.map((product) => (
-                              <div
-                                key={product.id}
-                                onClick={() => handleSelectProduct(product)}
-                                className="cursor-pointer select-none relative py-2 pl-3 pr-9 hover:bg-gray-100 focus:bg-gray-100 outline-none"
-                                tabIndex={0}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') {
-                                    handleSelectProduct(product);
-                                  }
-                                }}
-                              >
-                                <div className="flex items-center">
-                                  <span className="font-medium block truncate">{product.name}</span>
-                                </div>
-                                <div className="text-xs text-gray-500 mt-1">
-                                  Part #: {product.partNumber}
-                                </div>
-                              </div>
-                            ))}
+                            <p className="text-sm font-medium text-gray-900">{product.name}</p>
+                            {'description' in product && (
+                              <p className="text-sm text-gray-500">{product.description?.toString()}</p>
+                            )}
                           </div>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-2 whitespace-nowrap text-sm">
-                      <input
-                        id={`quantity-${part.id}`}
-                        type="number"
-                        min="1"
-                        value={part.quantity}
-                        onChange={(e) => handlePartChange(part.id, 'quantity', parseInt(e.target.value) || 1)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            if (index === spareParts.length - 1) {
-                              handleAddPart();
-                            } else {
-                              const nextPartInput = document.getElementById(`part-name-${spareParts[index + 1]?.id}`);
-                              if (nextPartInput) (nextPartInput as HTMLElement).focus();
-                            }
-                          }
-                        }}
-                      />
-                    </td>
-                    <td className="px-4 py-2 whitespace-nowrap text-right">
-                      {spareParts.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => handleRemovePart(part.id)}
-                          className="text-red-500 hover:text-red-700 focus:outline-none"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
+                        ))
+                      ) : (
+                        <div className="px-4 py-2 text-sm text-gray-500">
+                          No matching products found
+                        </div>
                       )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </div>
+                  )}
+                </div>
+                
+                {/* Quantity Input */}
+                <div className="col-span-3">
+                  <input
+                    id={`quantity-${part.id}`}
+                    type="number"
+                    min="1"
+                    value={part.quantity}
+                    onChange={(e) => handlePartChange(part.id, 'quantity', parseInt(e.target.value) || 1)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                
+                {/* Remove Button */}
+                <div className="col-span-1 flex justify-center">
+                  {spareParts.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => handleRemovePart(part.id)}
+                      className="p-1 text-gray-400 hover:text-red-500 rounded-full hover:bg-gray-100"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
           
-          <div className="flex justify-start mb-4">
-            <button
-              type="button"
-              onClick={handleAddPart}
-              className="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-blue-600 bg-blue-50 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-            >
-              <Plus className="h-4 w-4 mr-1" />
-              Add Another Part
-            </button>
-          </div>
-          
-          {errors.spareParts && (
-            <p className="mt-2 text-sm text-red-600">{errors.spareParts}</p>
-          )}
+          {/* Add Part Button */}
+          <button
+            type="button"
+            onClick={handleAddPart}
+            className="mt-4 flex items-center px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Add another part
+          </button>
         </div>
 
         {/* Submit Button */}
-        <div className="flex justify-end">
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-lg shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
+        <div className="flex justify-end pt-4">
+          <button type="submit" disabled={isSubmitting} className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-lg shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50">
             {isSubmitting ? 'Saving...' : 'Save Entry'}
           </button>
         </div>
