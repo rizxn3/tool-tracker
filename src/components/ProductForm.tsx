@@ -26,9 +26,7 @@ const ProductForm: React.FC<ProductFormProps> = ({ onSuccess, onCancel }) => {
       newErrors.partNumber = 'Part number is required';
     }
 
-    if (!buyingPrice.trim()) {
-      newErrors.buyingPrice = 'Buying price is required';
-    } else if (isNaN(parseFloat(buyingPrice)) || parseFloat(buyingPrice) <= 0) {
+    if (buyingPrice.trim() !== '' && isNaN(parseFloat(buyingPrice))) {
       newErrors.buyingPrice = 'Please enter a valid price';
     }
 
@@ -49,7 +47,7 @@ const ProductForm: React.FC<ProductFormProps> = ({ onSuccess, onCancel }) => {
       await saveProduct({
         name: productName.trim(),
         partNumber: partNumber.trim(),
-        buyingPrice: parseFloat(buyingPrice),
+        buyingPrice: buyingPrice.trim() === '' ? 0 : parseFloat(buyingPrice),
         timestamp: new Date()
       });
 

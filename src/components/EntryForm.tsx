@@ -18,13 +18,14 @@ const EntryForm: React.FC = () => {
   const [vehicleNumber, setVehicleNumber] = useState('');
   const [complaintType, setComplaintType] = useState('');
   const [spareParts, setSpareParts] = useState<SparePart[]>([
-    { id: Date.now().toString(), name: '', quantity: 1 }
+    { id: Date.now().toString(), name: '', quantity: 0 }
   ]);
 
   // Enhanced search-related states
   const [searchResults, setSearchResults] = useState<Product[]>([]);
   const [searchInputs, setSearchInputs] = useState<Record<string, string>>({});
   const [dropdownStates, setDropdownStates] = useState<Record<string, boolean>>({});
+  const [selectedIndex, setSelectedIndex] = useState<Record<string, number>>({});
   
   // Other UI/form handling states
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -50,11 +51,12 @@ const EntryForm: React.FC = () => {
 
   // --- SPARE PARTS MANAGEMENT ---
   const handleAddPart = () => {
-    const newPart = { id: Date.now().toString(), name: '', quantity: 1 };
+    const newPart = { id: Date.now().toString(), name: '', quantity: 0 };
     setSpareParts([...spareParts, newPart]);
     // Initialize search input and dropdown state for the new part
     setSearchInputs(prev => ({ ...prev, [newPart.id]: '' }));
     setDropdownStates(prev => ({ ...prev, [newPart.id]: false }));
+    setSelectedIndex(prev => ({ ...prev, [newPart.id]: -1 }));
     setTimeout(() => document.getElementById(`part-name-${newPart.id}`)?.focus(), 10);
   };
 
@@ -159,6 +161,40 @@ const EntryForm: React.FC = () => {
     const query = searchInputs[partId] || '';
     if (query.trim().length > 0) {
       searchProductsDebounced(partId, query);
+    }
+  };
+  
+  // Handle keyboard navigation for dropdown
+  const handleKeyDown = (e: React.KeyboardEvent, partId: string) => {
+    if (!dropdownStates[partId]) return;
+    
+    const currentIndex = selectedIndex[partId] || -1;
+    
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        if (searchResults.length > 0) {
+          const newIndex = currentIndex < searchResults.length - 1 ? currentIndex + 1 : 0;
+          setSelectedIndex(prev => ({ ...prev, [partId]: newIndex }));
+        }
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        if (searchResults.length > 0) {
+          const newIndex = currentIndex > 0 ? currentIndex - 1 : searchResults.length - 1;
+          setSelectedIndex(prev => ({ ...prev, [partId]: newIndex }));
+        }
+        break;
+      case 'Enter':
+        e.preventDefault();
+        if (currentIndex >= 0 && currentIndex < searchResults.length) {
+          handleSelectProduct(partId, searchResults[currentIndex]);
+        }
+        break;
+      case 'Escape':
+        e.preventDefault();
+        setDropdownStates(prev => ({ ...prev, [partId]: false }));
+        break;
     }
   };
   
@@ -284,6 +320,7 @@ const EntryForm: React.FC = () => {
                     value={part.name}
                     onChange={(e) => handlePartChange(part.id, 'name', e.target.value)}
                     onFocus={() => handleInputFocus(part.id)}
+                    onKeyDown={(e) => handleKeyDown(e, part.id)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="Type to search parts..."
                   />
@@ -295,13 +332,15 @@ const EntryForm: React.FC = () => {
                       className="absolute z-10 mt-1 w-full bg-white shadow-lg max-h-60 rounded-md py-1 text-base overflow-auto focus:outline-none sm:text-sm"
                     >
                       {searchResults.length > 0 ? (
-                        searchResults.map((product) => (
+                        searchResults.map((product, index) => (
                           <div
                             key={product.id}
                             onClick={() => handleSelectProduct(part.id, product)}
-                            className="cursor-pointer hover:bg-gray-100 px-4 py-2"
+                            className={`cursor-pointer px-4 py-2 ${index === (selectedIndex[part.id] || -1) ? 'bg-blue-100' : 'hover:bg-gray-100'}`}
                           >
-                            <p className="text-sm font-medium text-gray-900">{product.name}</p>
+                            <p className="text-sm font-medium text-gray-900">
+                              {product.name} {product.partNumber && `(${product.partNumber})`}
+                            </p>
                             {'description' in product && (
                               <p className="text-sm text-gray-500">{product.description?.toString()}</p>
                             )}
@@ -321,9 +360,9 @@ const EntryForm: React.FC = () => {
                   <input
                     id={`quantity-${part.id}`}
                     type="number"
-                    min="1"
+                    min="0"
                     value={part.quantity}
-                    onChange={(e) => handlePartChange(part.id, 'quantity', parseInt(e.target.value) || 1)}
+                    onChange={(e) => handlePartChange(part.id, 'quantity', e.target.value === '' ? 0 : parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
