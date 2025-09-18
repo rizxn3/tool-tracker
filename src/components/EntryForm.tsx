@@ -101,6 +101,15 @@ const EntryForm: React.FC = () => {
       setSearchResults([]);
     }
   };
+  const searchProductsDebounced = async (query: string) => {
+    try {
+      const results = await searchProducts(query);
+      setSearchResults(results);
+    } catch (error) {
+      console.error('Error searching products:', error);
+      setSearchResults([]);
+    }
+  };
   
   const handleSelectProduct = (product: Product) => {
     if (activePartId) {
