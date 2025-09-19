@@ -122,6 +122,8 @@ const EntryForm: React.FC = () => {
               const results = await searchProducts(query);
               setSearchResults(results);
               setDropdownStates(prev => ({ ...prev, [partId]: true }));
+              // Initialize selected index to 0 when dropdown opens
+              setSelectedIndex(prev => ({ ...prev, [partId]: 0 }));
             } catch (error) {
               console.error('Error searching products:', error);
               setSearchResults([]);
@@ -161,11 +163,24 @@ const EntryForm: React.FC = () => {
     const query = searchInputs[partId] || '';
     if (query.trim().length > 0) {
       searchProductsDebounced(partId, query);
+      // Also initialize selected index when focusing
+      setSelectedIndex(prev => ({ ...prev, [partId]: 0 }));
     }
   };
   
   // Handle keyboard navigation for dropdown
   const handleKeyDown = (e: React.KeyboardEvent, partId: string) => {
+    const query = searchInputs[partId] || '';
+    
+    // For arrow down, show dropdown even if it's not currently visible
+    if (e.key === 'ArrowDown' && !dropdownStates[partId] && query.trim().length > 0) {
+      e.preventDefault();
+      searchProductsDebounced(partId, query);
+      setDropdownStates(prev => ({ ...prev, [partId]: true }));
+      setSelectedIndex(prev => ({ ...prev, [partId]: 0 }));
+      return;
+    }
+    
     if (!dropdownStates[partId]) return;
     
     const currentIndex = selectedIndex[partId] || -1;
@@ -176,6 +191,14 @@ const EntryForm: React.FC = () => {
         if (searchResults.length > 0) {
           const newIndex = currentIndex < searchResults.length - 1 ? currentIndex + 1 : 0;
           setSelectedIndex(prev => ({ ...prev, [partId]: newIndex }));
+          
+          // Ensure the selected item is visible in the dropdown
+          setTimeout(() => {
+            const selectedElement = document.querySelector(`[data-part-id="${partId}"][data-index="${newIndex}"]`);
+            if (selectedElement) {
+              selectedElement.scrollIntoView({ block: 'nearest' });
+            }
+          }, 0);
         }
         break;
       case 'ArrowUp':
@@ -183,6 +206,14 @@ const EntryForm: React.FC = () => {
         if (searchResults.length > 0) {
           const newIndex = currentIndex > 0 ? currentIndex - 1 : searchResults.length - 1;
           setSelectedIndex(prev => ({ ...prev, [partId]: newIndex }));
+          
+          // Ensure the selected item is visible in the dropdown
+          setTimeout(() => {
+            const selectedElement = document.querySelector(`[data-part-id="${partId}"][data-index="${newIndex}"]`);
+            if (selectedElement) {
+              selectedElement.scrollIntoView({ block: 'nearest' });
+            }
+          }, 0);
         }
         break;
       case 'Enter':
@@ -335,6 +366,8 @@ const EntryForm: React.FC = () => {
                         searchResults.map((product, index) => (
                           <div
                             key={product.id}
+                            data-part-id={part.id}
+                            data-index={index}
                             onClick={() => handleSelectProduct(part.id, product)}
                             className={`cursor-pointer px-4 py-2 ${index === (selectedIndex[part.id] || -1) ? 'bg-blue-100' : 'hover:bg-gray-100'}`}
                           >
