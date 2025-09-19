@@ -11,6 +11,7 @@ const ProductForm: React.FC<ProductFormProps> = ({ onSuccess, onCancel }) => {
   const [productName, setProductName] = useState('');
   const [partNumber, setPartNumber] = useState('');
   const [buyingPrice, setBuyingPrice] = useState('');
+  const [boughtFrom, setBoughtFrom] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -48,6 +49,7 @@ const ProductForm: React.FC<ProductFormProps> = ({ onSuccess, onCancel }) => {
         name: productName.trim(),
         partNumber: partNumber.trim(),
         buyingPrice: buyingPrice.trim() === '' ? 0 : parseFloat(buyingPrice),
+        boughtFrom: boughtFrom.trim(),
         timestamp: new Date()
       });
 
@@ -57,6 +59,7 @@ const ProductForm: React.FC<ProductFormProps> = ({ onSuccess, onCancel }) => {
       setProductName('');
       setPartNumber('');
       setBuyingPrice('');
+      setBoughtFrom('');
       setErrors({});
 
       setTimeout(() => {
@@ -152,6 +155,20 @@ const ProductForm: React.FC<ProductFormProps> = ({ onSuccess, onCancel }) => {
           {errors.buyingPrice && (
             <p className="mt-1 text-sm text-red-600">{errors.buyingPrice}</p>
           )}
+        </div>
+
+        <div>
+          <label htmlFor="boughtFrom" className="block text-sm font-medium text-gray-700 mb-2">
+            Bought From
+          </label>
+          <input
+            type="text"
+            id="boughtFrom"
+            value={boughtFrom}
+            onChange={(e) => setBoughtFrom(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="Enter supplier name"
+          />
         </div>
 
         <div className="flex justify-end space-x-3 pt-4">

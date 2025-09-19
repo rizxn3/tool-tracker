@@ -49,6 +49,7 @@ const convertDbRowToProduct = (row: any): Product => ({
   name: row.name,
   partNumber: row.part_number,
   buyingPrice: row.buying_price,
+  boughtFrom: row.bought_from,
   timestamp: new Date(row.created_at)
 });
 
@@ -56,7 +57,8 @@ const convertDbRowToProduct = (row: any): Product => ({
 const convertProductToDbRow = (product: Omit<Product, 'id' | 'timestamp'>) => ({
   name: product.name,
   part_number: product.partNumber,
-  buying_price: product.buyingPrice
+  buying_price: product.buyingPrice,
+  bought_from: product.boughtFrom
 });
 
 // Save a new product
@@ -102,32 +104,23 @@ export const getAllProducts = async (): Promise<Product[]> => {
   }
 };
 
-// Search products by name or part number
+// Search products by name, part number, or bought from
 export const searchProducts = async (searchTerm: string): Promise<Product[]> => {
   try {
     if (!searchTerm.trim()) {
-      return [];
+      return await getAllProducts();
     }
     
-    // Use the search_products RPC function
+    // Use direct query with the new bought_from field
     const { data, error } = await supabase
-      .rpc('search_products', { search_term: searchTerm.trim() });
+      .from('products')
+      .select('*')
+      .or(`name.ilike.%${searchTerm}%,part_number.ilike.%${searchTerm}%,bought_from.ilike.%${searchTerm}%`)
+      .order('name');
 
     if (error) {
-      // Fallback to direct query if RPC fails
-      const { data: fallbackData, error: fallbackError } = await supabase
-        .from('products')
-        .select('*')
-        .or(`name.ilike.%${searchTerm}%,part_number.ilike.%${searchTerm}%`)
-        .order('name')
-        .limit(10);
-
-      if (fallbackError) {
-        console.error('Error searching products:', fallbackError);
-        throw new Error(`Failed to search products: ${fallbackError.message}`);
-      }
-
-      return (fallbackData || []).map(convertDbRowToProduct);
+      console.error('Error searching products:', error);
+      throw new Error(`Failed to search products: ${error.message}`);
     }
 
     return (data || []).map(convertDbRowToProduct);

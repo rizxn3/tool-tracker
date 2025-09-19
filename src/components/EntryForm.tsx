@@ -189,32 +189,28 @@ const EntryForm: React.FC = () => {
       case 'ArrowDown':
         e.preventDefault();
         if (searchResults.length > 0) {
+          // Calculate new index with wrap-around
           const newIndex = currentIndex < searchResults.length - 1 ? currentIndex + 1 : 0;
           setSelectedIndex(prev => ({ ...prev, [partId]: newIndex }));
           
-          // Ensure the selected item is visible in the dropdown
-          setTimeout(() => {
-            const selectedElement = document.querySelector(`[data-part-id="${partId}"][data-index="${newIndex}"]`);
-            if (selectedElement) {
-              selectedElement.scrollIntoView({ block: 'nearest' });
-            }
-          }, 0);
+          // Ensure the selected item is visible in the dropdown with smooth scrolling
+          ensureElementIsVisible(partId, newIndex, 'down');
         }
         break;
       case 'ArrowUp':
         e.preventDefault();
         if (searchResults.length > 0) {
+          // Calculate new index with wrap-around
           const newIndex = currentIndex > 0 ? currentIndex - 1 : searchResults.length - 1;
           setSelectedIndex(prev => ({ ...prev, [partId]: newIndex }));
           
-          // Ensure the selected item is visible in the dropdown
-          setTimeout(() => {
-            const selectedElement = document.querySelector(`[data-part-id="${partId}"][data-index="${newIndex}"]`);
-            if (selectedElement) {
-              selectedElement.scrollIntoView({ block: 'nearest' });
-            }
-          }, 0);
+          // Ensure the selected item is visible in the dropdown with smooth scrolling
+          ensureElementIsVisible(partId, newIndex, 'up');
         }
+        break;
+      case 'Tab':
+        // Allow natural tab navigation but close dropdown
+        setDropdownStates(prev => ({ ...prev, [partId]: false }));
         break;
       case 'Enter':
         e.preventDefault();
@@ -226,7 +222,49 @@ const EntryForm: React.FC = () => {
         e.preventDefault();
         setDropdownStates(prev => ({ ...prev, [partId]: false }));
         break;
+      case 'Home':
+        // Jump to first item
+        e.preventDefault();
+        if (searchResults.length > 0) {
+          setSelectedIndex(prev => ({ ...prev, [partId]: 0 }));
+          ensureElementIsVisible(partId, 0, 'up');
+        }
+        break;
+      case 'End':
+        // Jump to last item
+        e.preventDefault();
+        if (searchResults.length > 0) {
+          const lastIndex = searchResults.length - 1;
+          setSelectedIndex(prev => ({ ...prev, [partId]: lastIndex }));
+          ensureElementIsVisible(partId, lastIndex, 'down');
+        }
+        break;
     }
+  };
+  
+  // Helper function to ensure selected element is visible with improved scrolling
+  const ensureElementIsVisible = (partId: string, index: number, direction: 'up' | 'down') => {
+    setTimeout(() => {
+      const selectedElement = document.querySelector(`[data-part-id="${partId}"][data-index="${index}"]`) as HTMLElement;
+      const container = dropdownRefs.current[partId];
+      
+      if (selectedElement && container) {
+        const containerRect = container.getBoundingClientRect();
+        const elementRect = selectedElement.getBoundingClientRect();
+        
+        // Check if element is not fully visible
+        const isAbove = elementRect.top < containerRect.top;
+        const isBelow = elementRect.bottom > containerRect.bottom;
+        
+        if (isAbove || isBelow) {
+          // Use scrollIntoView with smooth behavior for better UX
+          selectedElement.scrollIntoView({
+            block: direction === 'up' ? 'start' : 'end',
+            behavior: 'smooth'
+          });
+        }
+      }
+    }, 0);
   };
   
   // Close dropdown when clicking outside of it
@@ -354,6 +392,11 @@ const EntryForm: React.FC = () => {
                     onKeyDown={(e) => handleKeyDown(e, part.id)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="Type to search parts..."
+                    aria-autocomplete="list"
+                    aria-controls={dropdownStates[part.id] ? `dropdown-${part.id}` : undefined}
+                    aria-expanded={dropdownStates[part.id]}
+                    aria-activedescendant={dropdownStates[part.id] && selectedIndex[part.id] !== undefined ? `option-${part.id}-${selectedIndex[part.id]}` : undefined}
+                    role="combobox"
                   />
                   
                   {/* Search Results Dropdown */}
@@ -361,21 +404,34 @@ const EntryForm: React.FC = () => {
                     <div 
                       ref={(el) => dropdownRefs.current[part.id] = el}
                       className="absolute z-10 mt-1 w-full bg-white shadow-lg max-h-60 rounded-md py-1 text-base overflow-auto focus:outline-none sm:text-sm"
+                      role="listbox"
+                      aria-labelledby={`part-name-${part.id}`}
+                      id={`dropdown-${part.id}`}
                     >
                       {searchResults.length > 0 ? (
                         searchResults.map((product, index) => (
                           <div
                             key={product.id}
+                            id={`option-${part.id}-${index}`}
                             data-part-id={part.id}
                             data-index={index}
                             onClick={() => handleSelectProduct(part.id, product)}
-                            className={`cursor-pointer px-4 py-2 ${index === (selectedIndex[part.id] || -1) ? 'bg-blue-100' : 'hover:bg-gray-100'}`}
+                            className={`cursor-pointer px-4 py-2 transition-colors duration-150 ${
+                              index === (selectedIndex[part.id] || -1) 
+                                ? 'bg-blue-500 text-white' 
+                                : 'hover:bg-gray-100'
+                            }`}
+                            role="option"
+                            aria-selected={index === (selectedIndex[part.id] || -1)}
+                            tabIndex={-1}
                           >
-                            <p className="text-sm font-medium text-gray-900">
+                            <p className={`text-sm font-medium ${index === (selectedIndex[part.id] || -1) ? 'text-white' : 'text-gray-900'}`}>
                               {product.name} {product.partNumber && `(${product.partNumber})`}
                             </p>
                             {'description' in product && (
-                              <p className="text-sm text-gray-500">{product.description?.toString()}</p>
+                              <p className={`text-sm ${index === (selectedIndex[part.id] || -1) ? 'text-blue-100' : 'text-gray-500'}`}>
+                                {product.description?.toString()}
+                              </p>
                             )}
                           </div>
                         ))

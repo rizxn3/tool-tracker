@@ -51,6 +51,7 @@ export interface Database {
           name: string;
           part_number: string;
           buying_price: number;
+          bought_from?: string;
           created_at: string;
           updated_at: string;
         };
@@ -59,6 +60,7 @@ export interface Database {
           name: string;
           part_number: string;
           buying_price: number;
+          bought_from?: string;
           created_at?: string;
           updated_at?: string;
         };
@@ -67,6 +69,7 @@ export interface Database {
           name?: string;
           part_number?: string;
           buying_price?: number;
+          bought_from?: string;
           created_at?: string;
           updated_at?: string;
         };
@@ -96,5 +99,6 @@ export interface Product {
   name: string;
   partNumber: string;
   buyingPrice: number;
+  boughtFrom?: string;
   timestamp: Date;
 }
